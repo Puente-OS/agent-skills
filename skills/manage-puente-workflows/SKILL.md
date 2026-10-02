@@ -41,8 +41,8 @@ For any connection-backed integration, first read [references/integrations.md](r
 - Connect Google Sheets or build a Sheets node: read [references/integrations.md](references/integrations.md), then [references/google-sheets.md](references/google-sheets.md).
 - Create a workflow: call `POST /workflows/` with a complete JSON definition and acknowledged automatic service effects.
 - Update a definition: call `POST /workflows/` with the stable `scenario_group_id`, a complete JSON definition, and acknowledged automatic service effects.
-- Change saved status: call `PUT /workflows/{scenario_id}/status` with a version `id`; activating requires separate explicit confirmation.
-- Delete or run a workflow: state that the operation is outside this skill and do nothing.
+- Change saved status: call `PUT /workflows/{scenario_id}/status` with the latest version `id` (`is_latest=true`); an older version returns `409`. Activating requires separate explicit confirmation.
+- Delete or run a workflow: state that the operation is outside this skill and do nothing. Deleting the current version of an active workflow with several versions returns `409`; it must be deactivated first.
 
 ## Before changing a definition
 
@@ -50,7 +50,7 @@ For any connection-backed integration, first read [references/integrations.md](r
 2. Validate every `node_id` through `GET /workflows/integrations`; never invent node types. When the request involves node-level code, inspect `GET /openapi.json` too: `script_code` is a persisted `WorkflowNode` field, not an integration `inputs` field.
 3. Preserve the complete `nodes` and `edges` arrays when creating a new version.
 4. Default new definitions and versions to `draft` unless the user explicitly requests another saved status.
-5. Explain that `POST /workflows/` automatically generates or inherits Puente synchronous-webhook metadata and inherits scheduling metadata on new versions. This can expose a fixed Puente webhook endpoint even while the workflow remains a draft.
+5. Explain that `POST /workflows/` automatically generates or inherits Puente synchronous-webhook metadata. This can expose a fixed Puente webhook endpoint even while the workflow remains a draft. Saving an active definition with a `trigger.schedule` node also creates or updates its schedule.
 6. Obtain explicit user confirmation of those effects before sending a create/version request.
 7. If any create/version payload uses `status: "active"`, obtain separate explicit confirmation of activation.
 8. Show the intended HTTP method, path, and JSON body without sending it when the requested change is ambiguous or needs confirmation.
@@ -102,12 +102,12 @@ corresponding URL could not be derived instead of guessing.
 
 ## Distinguish management from execution
 
-Do not directly call workflow execution, trigger, webhook, cron, schedule, or run endpoints.
+Do not directly call workflow execution, trigger, webhook, cron, schedule, or run endpoints. The Puente API manages schedules from definition writes, including those made with a Studio credential, so no separate cron call is needed.
 
 Definition management can still change runtime eligibility:
 
 - Creating or versioning causes the automatic webhook and metadata behavior described above.
-- Saving `status: "active"` does not execute immediately, but it enables existing external triggers, synchronous webhooks, or schedules to execute that workflow.
+- Saving `status: "active"` does not execute immediately, but it enables existing external triggers or synchronous webhooks to execute that workflow. Saving or activating a definition with a `trigger.schedule` node creates or updates its schedule; see the schedule rules in [references/api.md](references/api.md).
 
 Require explicit user confirmation for every transition or create/version payload that saves an active status. Never describe activation as inert metadata.
 
@@ -167,6 +167,7 @@ Report the HTTP outcome and these non-secret fields:
 - `status`
 - `equipo_id`
 - `sync_webhook_id` when returned
+- `schedule.state`, with `reason` or `error_code` when present, after `POST /workflows/` or `PUT /workflows/{scenario_id}/status`
 
 After a successful complete workflow create, also report:
 
