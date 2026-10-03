@@ -12,7 +12,7 @@
 
 ## Scope
 
-Manage saved workflow definitions only. Never directly call workflow execution, trigger, webhook, cron, schedule, or deletion endpoints. Definition writes have automatic backend lifecycle side effects documented below.
+Manage saved workflow definitions only. Never directly call workflow execution, trigger, webhook, cron, schedule, or deletion endpoints. Definition writes have automatic backend lifecycle side effects documented below, including schedule management, so no separate cron call is needed.
 
 ## Configuration and authentication
 
@@ -34,7 +34,7 @@ Send `X-API-Key: <STUDIO_KEY>` on every request. The credential supplies the com
 | List version history | `GET /workflows/?all_versions=true` | Used to inspect a version or group locally. |
 | Create definition | `POST /workflows/` | Omit `scenario_group_id`; acknowledge automatic service effects. |
 | Create updated version | `POST /workflows/` | Include `scenario_group_id`, the complete definition, and acknowledged side effects. |
-| Change saved status | `PUT /workflows/{scenario_id}/status` | Use a version ID; activation requires explicit confirmation. |
+| Change saved status | `PUT /workflows/{scenario_id}/status` | Use the latest version ID; activation requires explicit confirmation. |
 
 No other workflow-definition action is part of this skill. Connection management is documented separately in [integrations.md](integrations.md); provider action contracts remain in [gmail.md](gmail.md) and [google-sheets.md](google-sheets.md).
 
@@ -109,6 +109,24 @@ nodes, edges, status, equipo_id, webhook_url, sync_webhook_id,
 created_by_user_id, created_at, updated_at, validation_warnings
 ```
 
+`POST /workflows/` and `PUT /workflows/{scenario_id}/status` also return `schedule`:
+
+```json
+{
+  "state": "scheduled",
+  "reason": null,
+  "error_code": null,
+  "schedule_id": "<schedule-id>",
+  "cron": "0 9 * * 1-5",
+  "timezone": "America/Santiago"
+}
+```
+
+- `scheduled`: the schedule exists and runs `cron` in `timezone`. If `error_code` is `cron_invalid`, `cron_too_frequent`, or `timezone_invalid`, the existing schedule keeps its previous cron until the saved one is corrected.
+- `not_scheduled`: the workflow does not run on a schedule. `reason` is `inactive`, `not_schedule_trigger`, `missing_cron`, or `legacy_unscheduled` (an older active workflow that is scheduled on its next save or activation). Report it as information, not as an error.
+- `sync_failed`: the definition was saved and remains active, but the schedule could not be synchronized; `error_code` explains why. A changed cron keeps the previous schedule until synchronization succeeds. Report it; the next save or the backend's periodic repair retries it. Do not retry automatically.
+- `not_configured`: scheduling is disabled in this environment.
+
 ## Definition-management flows
 
 ### List
@@ -149,10 +167,30 @@ There is no partial definition update.
 2. Copy `nombre`, `descripcion`, `nodes`, `edges`, and `status` into a new payload.
 3. Set `scenario_group_id` to the existing stable group ID.
 4. Apply the requested edits.
-5. Explain that the new version inherits `sync_webhook_id` and scheduling metadata from the prior version, preserving the fixed Puente webhook endpoint.
+5. Explain that the new version inherits `sync_webhook_id` from the prior version, preserving the fixed Puente webhook endpoint, and that saving it as active with a `trigger.schedule` node creates or updates the workflow's schedule.
 6. Obtain explicit user confirmation of the automatic service effects.
 7. POST the complete payload once.
 8. Verify that `version` increased and `is_latest` is true.
+
+### Schedule triggers
+
+A workflow is scheduled when its latest version is `active` and has exactly one `trigger.schedule` node. Saving through `POST /workflows/` or activating through `PUT /workflows/{scenario_id}/status` creates or updates that schedule automatically, including with a Studio credential. Do not call `/workflows/{id}/cron`.
+
+`inputs.cron` must have exactly 5 fields (minute, hour, day of month, month, day of week) using only digits and `* / , -`. Names such as `MON`, `?`, `L`, `#`, `@` macros, and seconds fields are rejected; day of week is `0-6`. The minimum interval is 5 minutes, checked on the minute field:
+
+| Cron | Result |
+|---|---|
+| `*/5 * * * *`, `0,30 * * * *`, `0 9 * * 1-5` | Valid |
+| `* * * * *`, `*/2 * * * *`, `0-10 * * * *`, `*/7 * * * *` | `cron_too_frequent` |
+
+`inputs.timezone` must be an exact IANA name such as `America/Santiago`; it defaults to `UTC`.
+
+Validation codes are `cron_missing`, `cron_invalid`, `cron_too_frequent`, `timezone_invalid`, and `trigger_schedule_duplicated`. They return `422` when:
+
+- `POST /workflows/` saves `active` and the cron or timezone changed, the previous version was not active, or the workflow is new. `detail` is `{"errors": [...], "warnings": [...]}`, each item `{code, message, node, edge}`. The previous version stays current.
+- `PUT /workflows/{scenario_id}/status` activates the version. `detail` is a user-facing string.
+
+Other saves return the same codes in `validation_warnings`.
 
 ### Derive user-facing URLs
 
@@ -179,15 +217,16 @@ than the webhook endpoint.
 
 ### Change saved status
 
-Use the saved version `id`. Activating one version causes other active versions in the same group to become inactive.
+Use the saved version `id` of the latest version (`is_latest=true`). Any other version returns `409`; read the group again and use its latest `id`. Activating one version causes other active versions in the same group to become inactive.
 
-Activation does not run the workflow immediately. It does make the workflow eligible for execution through existing external triggers, synchronous webhooks, or schedules. Require separate explicit user confirmation before saving `active`, including when `active` appears in a create/version payload.
+Activation does not run the workflow immediately. It does make the workflow eligible for execution through existing external triggers or synchronous webhooks, and it creates or updates the schedule of a `trigger.schedule` workflow. Require separate explicit user confirmation before saving `active`, including when `active` appears in a create/version payload.
 
 ## Errors and safety
 
 - `401`: the Studio credential is missing, invalid, revoked, or not accepted.
 - `403`: the operation attempts a resource outside the credential's team.
 - `404`: the requested saved definition cannot be found through the available list data.
-- `422`: the payload shape is invalid.
+- `409`: `PUT /workflows/{scenario_id}/status` received a version that is not the latest. Deleting the current version of an active workflow with several versions also returns `409`; it must be deactivated first.
+- `422`: the payload shape is invalid, or a schedule validation code applies (see Schedule triggers).
 
 Never print the Studio credential or persist it outside the current project's ignored `.env`. Do not automatically retry create, version, or status mutations after a network interruption.
