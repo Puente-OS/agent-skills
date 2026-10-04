@@ -9,12 +9,14 @@ the user's run.
 
 | Category | Names or messages |
 | --- | --- |
-| Data limits | `payload_limit_exceeded`, `IteratorContextTooLarge` |
-| Execution time | `ExecutionTimeout`, `PythonExecutionTimeout` |
-| Workflow code | Custom Python exceptions, including `RuntimeError` |
+| Data limits | `payload_limit_exceeded`, `IteratorContextTooLarge`, `ResultTooLarge`, `ContextTooLarge`, `InvalidResult` |
+| Execution time | `ExecutionTimeout`, `PythonExecutionTimeout`, `RunDeadlineExceeded` |
+| Workflow code | Custom Python exceptions, including `RuntimeError`; `ScriptSyntaxError`, `ScriptExitError` |
+| Browser resources | `OutOfMemory`, `BrowserCrashed` |
+| Unknown outcome | `OutcomeUnknown`, `NodeExecutionInterrupted`, `execution_outcome_unknown` |
 | Configuration | `NodeNotFound`, `NoCodeAvailable` |
 | Integrations | `IntegrationRuntimeUnavailable`, `IntegrationActionFailed`, `invalid_range` |
-| Infrastructure | E2B health check warnings, `E2B_InfrastructureError`, `E2B_SDKError` |
+| Infrastructure | E2B health check warnings, `E2B_InfrastructureError`, `E2B_SDKError`, `SandboxStartFailed` |
 | Internal coordination | `step_has_active_owner`, `step_ownership_lost`, `execution_not_active` |
 
 For evidence collection and access limits, read [troubleshooting.md](troubleshooting.md).
@@ -49,7 +51,7 @@ explicit error message for a numeric limit; a merged change may not be deployed.
 ### `ExecutionTimeout` / `PythonExecutionTimeout`
 
 - **Meaning:** Code did not finish within its execution time limit.
-- **Where it appears:** A saved step error. `ExecutionTimeout` is used by the legacy executor; the new graph executor uses `PythonExecutionTimeout`.
+- **Where it appears:** A saved step error. `ExecutionTimeout` is used by the legacy executor and by the headless browser node in every engine; the new graph executor uses `PythonExecutionTimeout` for Python nodes.
 - **Causes:** Large batches, unbounded loops, slow external calls, or a platform execution limit.
 - **Fix:** Use smaller batches, bounded loops, and timeouts for external requests. Use the limit reported for that execution; do not apply a legacy timeout to every engine.
 - **Retry:** After checking what the timed-out code already changed. A timeout does not prove that external writes failed.
@@ -148,10 +150,58 @@ contract does not prove a visible UI fix. Failure notification code still reads
 
 ### `E2B_InfrastructureError` / `E2B_SDKError`
 
-- **Meaning:** The legacy executor could not complete a sandbox operation or communicate with its SDK.
-- **Where it appears:** Error responses from the legacy executor. Do not label every new-engine sandbox exception with these names.
+- **Meaning:** The legacy executor could not start a sandbox or communicate with its SDK before the script started.
+- **Where it appears:** Error responses from the legacy executor. Do not label every new-engine sandbox exception with these names. A connection lost after the script started is `OutcomeUnknown`.
 - **Fix:** Contact Puente if the failure persists. Include the exact message, execution ID, and time.
 - **Retry:** First inspect completed steps and external actions. Infrastructure failure does not prove that no work occurred.
+
+### `SandboxStartFailed`
+
+- **Meaning:** Puente could not create the sandbox or upload the script after its own retries. The script did not start.
+- **Fix:** Wait a few minutes. Contact Puente if it persists, with the execution ID and time.
+- **Retry:** Safe to retry: the script never ran.
+
+## Unknown outcome
+
+### `OutcomeUnknown` / `NodeExecutionInterrupted` / `execution_outcome_unknown`
+
+- **Meaning:** The connection with the sandbox was lost, or the worker stopped, after the script started. The script may have finished part or all of its work. Each engine uses one of these three names for the same situation.
+- **Fix:** Check what the script already did: rows written, messages sent, forms submitted. For SQL Server queries the message asks the user to review the database.
+- **Retry:** Puente does not retry these nodes automatically. Run again only after confirming that repeating the effects is safe.
+
+## Browser resources
+
+### `OutOfMemory`
+
+- **Meaning:** The script used more than the sandbox's 2 GiB of memory and the process was stopped, or Python raised `MemoryError`.
+- **Fix:** Close pages when they are no longer needed, open fewer tabs at once, or process fewer pages per run.
+- **Retry:** Do not retry unchanged.
+
+### `BrowserCrashed`
+
+- **Meaning:** Chromium closed unexpectedly while the script was failing, almost always because memory ran out.
+- **Fix:** Same as `OutOfMemory`. If the script finishes but stderr says Chromium closed processes for lack of memory, the result may be incomplete.
+- **Retry:** Do not retry unchanged.
+
+## Script results and time
+
+### `ResultTooLarge` / `ContextTooLarge` / `InvalidResult`
+
+- **Meaning:** The node result exceeds 2 MiB; the results of all nodes in the run would exceed 2 MiB; or the JSON contains `NaN` or `Infinity`.
+- **Fix:** Return fewer fields, keep screenshots as JPEG with a quality setting, crop them, or replace non-finite numbers.
+- **Retry:** Do not retry unchanged.
+
+### `RunDeadlineExceeded`
+
+- **Meaning:** Less than a minute remained in the run, so the node did not start.
+- **Fix:** Move slow steps earlier, split the workflow, or reduce its work.
+- **Retry:** Safe to retry: the script never ran.
+
+### `ScriptSyntaxError` / `ScriptExitError`
+
+- **Meaning:** The script does not compile (no sandbox was created), or it ended with a non-zero exit code without a Python exception. The message includes the last stderr line.
+- **Fix:** Correct the script. Run the pre-save checker described in [headless-browser.md](headless-browser.md).
+- **Retry:** A syntax error is safe to retry after the fix. For an exit code, check what the script already did.
 
 ## Internal coordination
 
