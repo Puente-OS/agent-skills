@@ -122,23 +122,48 @@ Create a new saved node from public catalog data with:
 | `label` | Stable name used to identify this node inside the workflow. |
 | `node_id` | Exact identifier returned by `integrations`. |
 | `inputs` | Object constructed only from the selected node's current `input_schema`. |
-| `script_code` | Optional top-level persisted node field documented by `GET /openapi.json`; it is not an `inputs` key. Use it for a requested `core.python_code` script only after validating the public contract. |
+| `script_code` | Optional top-level persisted node field documented by `GET /openapi.json`; it is not an `inputs` key. Use it for the script of a catalog node whose `node_type` is `CODE`, such as `core.python_code` or `core.headless_browser`. |
 | `on_error` | Use `stop` by default. Use `continue` only when the user explicitly wants later nodes to proceed after failure. |
 | `position` | Optional visual-editor coordinates. |
 | `index_position` | Optional canvas index used with the label to identify the node in references and edges. |
 
-For an existing workflow version, preserve the complete saved node objects returned by the API and change only the fields required by the user's requested definition update. Do not guess Python runtime variables, output paths, or interpolation syntax merely because `script_code` is supported.
+For an existing workflow version, preserve the complete saved node objects returned by the API and change only the fields required by the user's requested definition update.
 
-## Python script nodes
+## Code nodes
 
-When the user requests a Python step, first confirm that the live catalog
-contains `core.python_code`. The catalog's `input_schema` controls only
-`inputs`; it can be empty while the node still accepts its top-level
-`script_code` field. Confirm that field in `GET /openapi.json` before saving.
+Code nodes are the catalog entries whose `node_type` is `CODE`:
+`core.python_code` runs plain Python and `core.headless_browser` runs Python
+with Playwright and Chromium. Confirm the node in the live catalog and the
+top-level `script_code` field in `GET /openapi.json` before saving. The
+catalog's `input_schema` controls only `inputs`; it can be empty while the node
+still accepts `script_code`. When the catalog returns a `code_template`, use it
+as the starting script.
 
-Place the source string in `script_code`, not in `inputs`. The OpenAPI schema
-does not by itself define which workflow variables are available inside the
-Python runtime, so use only a documented or already-saved reference pattern.
+Place the source string in `script_code`, not in `inputs`. Puente injects
+three variables before the script runs:
+
+| Variable | Content |
+| --- | --- |
+| `inputs` | The node's resolved `inputs` object |
+| `variables` | Outputs of earlier nodes and the trigger, by context key |
+| `contexto` | `{**variables, **inputs}` |
+
+Read earlier nodes with the same key a reference would use:
+`contexto["consulta_sql_3"]["filas"]` instead of `{{consulta_sql_3.filas}}`.
+Triggers use only their name, such as `contexto["webhook"]`. Never write
+`{{ }}` inside `script_code`: it is not resolved there, and in other code
+inputs resolved values are inserted without quotes, which can break or inject
+code. Print only the final JSON with `print(json.dumps(...))`; send debugging
+output to `sys.stderr`. Do not write credentials into the script.
+
+Before saving any code node, run the bundled checker with the node's
+`node_id`:
+
+```bash
+python3 <skill-directory>/scripts/check_code_node.py script.py --node-id core.python_code
+```
+
+For `core.headless_browser`, follow [headless-browser.md](headless-browser.md).
 
 ## Inputs and references
 

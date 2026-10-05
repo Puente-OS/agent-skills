@@ -1,6 +1,6 @@
 ---
 name: manage-puente-workflows
-description: Manage Puente workflow definitions and connection-backed workflow integrations with a Puente Studio credential. Use when an external Puente Studio user needs to configure Gmail or Google Sheets connections and nodes, reuse or authorize an integration account, diagnose failed or stuck workflows from supplied error details, inspect workflows, create a draft or complete new version, connect nodes and edges, or change a saved workflow version's status. Disclose automatic Puente webhook and scheduling side effects, require explicit activation confirmation, and never call workflow run endpoints.
+description: Manage Puente workflow definitions and connection-backed workflow integrations with a Puente Studio credential. Use when an external Puente Studio user needs to configure Gmail or Google Sheets connections and nodes, write Python or headless browser (Playwright) code nodes, reuse or authorize an integration account, diagnose failed or stuck workflows from supplied error details, inspect workflows, create a draft or complete new version, connect nodes and edges, or change a saved workflow version's status. Disclose automatic Puente webhook and scheduling side effects, require explicit activation confirmation, and never call workflow run endpoints.
 ---
 
 # Manage Puente Workflows
@@ -36,6 +36,7 @@ For any connection-backed integration, first read [references/integrations.md](r
 - List saved workflows: call `GET /workflows/`.
 - Inspect a version or stable group: call `GET /workflows/?all_versions=true` and filter the returned definitions by `id` or `scenario_group_id`.
 - Discover valid node types: call `GET /workflows/integrations`.
+- Build a Python or headless browser step: read [references/nodes.md](references/nodes.md), and [references/headless-browser.md](references/headless-browser.md) for a browser.
 - List or select integration connections: use [references/integrations.md](references/integrations.md), then the selected provider reference.
 - Connect Gmail or build a Gmail node: read [references/integrations.md](references/integrations.md), then [references/gmail.md](references/gmail.md).
 - Connect Google Sheets or build a Sheets node: read [references/integrations.md](references/integrations.md), then [references/google-sheets.md](references/google-sheets.md).
@@ -141,20 +142,27 @@ Never use this as an excuse to invent a Studio table-reveal endpoint or to
 place plaintext inside published application code. The Studio table API,
 public table APIs, and ordinary table reads remain ciphertext-only.
 
-## Python code nodes
+## Code nodes
 
 The live integration catalog controls a node's `inputs` object. It does not
 describe every persisted `WorkflowNode` field. In the public OpenAPI contract,
 `script_code` is a top-level field on `WorkflowNode`, so an empty
-`input_schema` for `core.python_code` does **not** mean that the Python node
-cannot receive a script.
+`input_schema` for a code node does **not** mean that it cannot receive a
+script. Every catalog node whose `node_type` is `CODE` accepts `script_code`:
+`core.python_code` for plain Python and `core.headless_browser` for Python with
+Playwright and Chromium.
 
-For a requested Python step, validate `core.python_code` through the live
-catalog, validate `script_code` through `GET /openapi.json`, and save the code
-as the node's top-level `script_code` field—not inside `inputs`. Do not invent
-runtime variables, output paths, or interpolation syntax: derive those from a
-documented public contract, an existing saved workflow, or user-provided
-details.
+For a requested code step, validate the node through the live catalog,
+validate `script_code` through `GET /openapi.json`, and save the code as the
+node's top-level `script_code` field—not inside `inputs`. Read data from
+earlier nodes through `contexto["context_key"]`, never with `{{ }}` inside the
+code, and print only the final JSON to stdout. Read
+[references/nodes.md](references/nodes.md) for these rules.
+
+When the user needs to open web pages, fill forms, or capture a page, read
+[references/headless-browser.md](references/headless-browser.md) before
+writing the script. Run its pre-save check, save the workflow inactive, and
+ask the user to test the node with **Ejecutar** before proposing activation.
 
 ## Report results
 
