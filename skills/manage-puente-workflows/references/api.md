@@ -30,6 +30,8 @@ Send `X-API-Key: <STUDIO_KEY>` on every request. The credential supplies the com
 | Action | Method and path | Notes |
 |---|---|---|
 | Integration catalog | `GET /workflows/integrations` | Use to discover valid `node_id` values and their public input schemas. |
+| Function catalog | `GET /workflows/functions` | Read-only list of field functions; see [expressions.md](expressions.md). |
+| Preview a field value | `POST /workflows/expressions/evaluate` | Read-only formula preview with sample `variables`; it never runs or saves a workflow. |
 | List definitions | `GET /workflows/` | Latest version per group by default. |
 | List version history | `GET /workflows/?all_versions=true` | Used to inspect a version or group locally. |
 | Create definition | `POST /workflows/` | Omit `scenario_group_id`; acknowledge automatic service effects. |
@@ -192,6 +194,10 @@ Validation codes are `cron_missing`, `cron_invalid`, `cron_too_frequent`, `timez
 
 Other saves return the same codes in `validation_warnings`.
 
+### Field formula validation
+
+Every `POST /workflows/` and every activation through `PUT /workflows/{scenario_id}/status` validates field formulas. A `draft` save returns formula errors in `validation_warnings` and still saves. An `active` or `inactive` save, or an activation, returns `422` with `detail` = `{"errors": [...], "warnings": [...]}`; formula items add `field`, `start`, `end`, and `hint`. Fix them with [expressions.md](expressions.md).
+
 ### Derive user-facing URLs
 
 Use only these configured API origins:
@@ -227,6 +233,6 @@ Activation does not run the workflow immediately. It does make the workflow elig
 - `403`: the operation attempts a resource outside the credential's team.
 - `404`: the requested saved definition cannot be found through the available list data.
 - `409`: `PUT /workflows/{scenario_id}/status` received a version that is not the latest. Deleting the current version of an active workflow with several versions also returns `409`; it must be deactivated first.
-- `422`: the payload shape is invalid, or a schedule validation code applies (see Schedule triggers).
+- `422`: the payload shape is invalid, a schedule validation code applies (see Schedule triggers), or a field formula is invalid (see Field formula validation).
 
 Never print the Studio credential or persist it outside the current project's ignored `.env`. Do not automatically retry create, version, or status mutations after a network interruption.
