@@ -8,6 +8,7 @@
 - Saved node shape
 - Python script nodes
 - Inputs and references
+- Updating table rows
 - Edges
 - Safe authoring
 
@@ -94,7 +95,7 @@ Common `input_schema` metadata includes:
 - `required`: whether a value is required;
 - `default`: value to use when the user has not supplied one;
 - `options`: allowed choices for dropdown-like inputs;
-- `label` and `description`: user-facing guidance;
+- `label`, `help`, and `description`: user-facing guidance; the workflow editor shows `help` under the field;
 - conditional display metadata when one field depends on another.
 
 Only use fields present in the returned schema. Integration inputs are exact contracts, and extra fields can be rejected. Internal implementation fields are intentionally unavailable through this interface.
@@ -219,6 +220,44 @@ decrypted. Do not rely on partial rows.
 
 This input does not change the Studio table API or a published application's
 table API: those ordinary reads continue to return `kms:v1:...` ciphertext.
+
+## Updating table rows
+
+For the catalog node displayed as **Puente -> Actualizar Fila**, inspect the
+live `input_schema`. When it contains `modo`, choose the mode explicitly:
+
+| Goal | `modo` |
+|---|---|
+| Change some columns and keep the rest | `parcial` |
+| Write the complete row | `reemplazo` |
+| Empty or shorten a list value | `reemplazo` |
+
+`reemplazo` is the default. It stores only `datos`: every column omitted from
+`datos` becomes `null`, and a required omitted column fails the node.
+
+`parcial` merges `datos` into the stored row:
+
+```text
+stored row: {"nombre": "Ana", "estado": "pendiente", "tags": ["a", "b"]}
+datos:      {"estado": "listo"}
+
+reemplazo -> {"nombre": null,  "estado": "listo", "tags": null}
+parcial   -> {"nombre": "Ana", "estado": "listo", "tags": ["a", "b"]}
+```
+
+- Nested objects merge key by key.
+- Lists merge by index and never shrink: `["a", "b", "c"]` with `["x"]`
+  becomes `["x", "b", "c"]`, and `[]` changes nothing.
+- `null` stores `null`; it does not remove the key.
+- The merged row is validated as a whole, so an existing invalid value in an
+  untouched column fails the update.
+
+In both modes, keys that are not table column keys are dropped without an
+error and the node still reports `updated: true`. Read the table structure
+and use each column's exact `key`. `datos` must be a non-empty object. Use
+`_id` from a Query node row as `fila_id`.
+
+The output `fila_data` is the complete stored row.
 
 ## Edges
 
