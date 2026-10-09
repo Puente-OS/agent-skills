@@ -1,6 +1,6 @@
 ---
 name: manage-puente-workflows
-description: Manage Puente workflow definitions and connection-backed workflow integrations with a Puente Studio credential. Use when an external Puente Studio user needs to configure Gmail or Google Sheets connections and nodes, write Python or headless browser (Playwright) code nodes, reuse or authorize an integration account, diagnose failed or stuck workflows from supplied error details, inspect workflows, create a draft or complete new version, connect nodes and edges, or change a saved workflow version's status. Disclose automatic Puente webhook and scheduling side effects, require explicit activation confirmation, and never call workflow run endpoints.
+description: Manage Puente workflow definitions and connection-backed workflow integrations with a Puente Studio credential. Use when an external Puente Studio user needs to configure Gmail or Google Sheets connections and nodes, write Python or headless browser (Playwright) code nodes, reuse or authorize an integration account, diagnose failed or stuck workflows from supplied error details, write field formulas with now, today, format_date, or uuid, inspect workflows, create a draft or complete new version, connect nodes and edges, or change a saved workflow version's status. Disclose automatic Puente webhook and scheduling side effects, require explicit activation confirmation, and never call workflow run endpoints.
 ---
 
 # Manage Puente Workflows
@@ -27,7 +27,7 @@ Never print the key, place it in a URL, write it into generated source code, or 
 
 ## Load the contract
 
-Read [references/api.md](references/api.md) before preparing a workflow-definition request. Read [references/nodes.md](references/nodes.md) before creating or changing `nodes`, `edges`, node inputs, or cross-node references.
+Read [references/api.md](references/api.md) before preparing a workflow-definition request. Read [references/nodes.md](references/nodes.md) before creating or changing `nodes`, `edges`, node inputs, or cross-node references. Read [references/expressions.md](references/expressions.md) before writing a date, time, or unique ID into a node input, or when a save or activation returns expression codes.
 
 For any connection-backed integration, first read [references/integrations.md](references/integrations.md). Then read only the selected provider reference: [references/gmail.md](references/gmail.md) for Gmail or [references/google-sheets.md](references/google-sheets.md) for Google Sheets. Do not load every provider reference when only one integration is involved. Use only the public HTTP methods and paths documented in those references.
 
@@ -36,6 +36,7 @@ For any connection-backed integration, first read [references/integrations.md](r
 - List saved workflows: call `GET /workflows/`.
 - Inspect a version or stable group: call `GET /workflows/?all_versions=true` and filter the returned definitions by `id` or `scenario_group_id`.
 - Discover valid node types: call `GET /workflows/integrations`.
+- Write or fix a field formula (`now`, `today`, `format_date`, `uuid`): read [references/expressions.md](references/expressions.md), preview it with `POST /workflows/expressions/evaluate`, and list functions with `GET /workflows/functions`.
 - Build a Python or headless browser step: read [references/nodes.md](references/nodes.md), and [references/headless-browser.md](references/headless-browser.md) for a browser.
 - List or select integration connections: use [references/integrations.md](references/integrations.md), then the selected provider reference.
 - Connect Gmail or build a Gmail node: read [references/integrations.md](references/integrations.md), then [references/gmail.md](references/gmail.md).
@@ -55,8 +56,9 @@ For any connection-backed integration, first read [references/integrations.md](r
 6. Obtain explicit user confirmation of those effects before sending a create/version request.
 7. If any create/version payload uses `status: "active"`, obtain separate explicit confirmation of activation.
 8. Show the intended HTTP method, path, and JSON body without sending it when the requested change is ambiguous or needs confirmation.
-9. Send the mutation once. If the response is interrupted, read the saved state instead of retrying automatically.
-10. Read the saved definition back and verify identifiers, version, team, and status.
+9. When inputs contain formulas, preview each one with `POST /workflows/expressions/evaluate` and fix every error first.
+10. Send the mutation once. If the response is interrupted, read the saved state instead of retrying automatically.
+11. Read the saved definition back and verify identifiers, version, team, and status. Report expression items in `validation_warnings`; a draft saves with formula errors there, and they block activation.
 
 This is the concrete behavior previously described as “guard writes”: inspect, preview when needed, write once, and verify. It is an agent safety procedure, not an API feature.
 

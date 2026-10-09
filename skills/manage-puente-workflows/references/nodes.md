@@ -148,7 +148,8 @@ three variables before the script runs:
 | `variables` | Outputs of earlier nodes and the trigger, by context key |
 | `contexto` | `{**variables, **inputs}` |
 
-Read earlier nodes with the same key a reference would use:
+Field functions such as `now()` are not available in `script_code`; use Python
+`datetime` and `uuid` there. Read earlier nodes with the same key a reference would use:
 `contexto["consulta_sql_3"]["filas"]` instead of `{{consulta_sql_3.filas}}`.
 Triggers use only their name, such as `contexto["webhook"]`. Never write
 `{{ }}` inside `script_code`: it is not resolved there, and in other code
@@ -189,6 +190,8 @@ label="selected_action", index_position=1 -> selected_action_1
 ```
 
 When the whole input value is one reference, the referenced value can remain an object, array, number, boolean, or string. Embedded references become text.
+
+Inputs also accept the functions `now()`, `today()`, `format_date()`, and `uuid()` inside the same `{{ }}`, for example `{{ format_date(pedido_1.fecha; 'DD/MM/YYYY') }}`. Inside a function, paths have no braces and arguments are separated by `;`. Read [expressions.md](expressions.md) for the syntax, the fields that do not evaluate formulas, and validation codes.
 
 The integrations catalog describes saved/selectable inputs; formal action outputs are published separately in `GET /openapi.json` under `x-puente-integration-actions[node_id].output_schema`. Cross-check the `node_id` in both surfaces before using those fields. When no output schema is published for an action, do not guess output field names; use references already present in a saved workflow or output behavior documented through another approved public Puente interface.
 
@@ -241,7 +244,8 @@ Do not use edges to invent branching, looping, or execution behavior that is not
 2. Select only a returned `node_id`.
 3. When OpenAPI publishes `x-puente-integration-actions[node_id]`, cross-check
    the same ID and read its runtime input/output schemas and action metadata.
-4. Build `inputs` only from the exact action contract. For a Python script,
+4. Build `inputs` only from the exact action contract. Preview any field
+   formula through `POST /workflows/expressions/evaluate`. For a Python script,
    separately validate the top-level `script_code` field in `GET /openapi.json`.
 5. Ask for every missing required operational value.
 6. Default `on_error` to `stop`.

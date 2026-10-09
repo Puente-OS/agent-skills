@@ -14,7 +14,7 @@ the user's run.
 | Workflow code | Custom Python exceptions, including `RuntimeError`; `ScriptSyntaxError`, `ScriptExitError` |
 | Browser resources | `OutOfMemory`, `BrowserCrashed` |
 | Unknown outcome | `OutcomeUnknown`, `NodeExecutionInterrupted`, `execution_outcome_unknown` |
-| Configuration | `NodeNotFound`, `NoCodeAvailable` |
+| Configuration | `NodeNotFound`, `NoCodeAvailable`, `ExpressionError` |
 | Integrations | `IntegrationRuntimeUnavailable`, `IntegrationActionFailed`, `invalid_range` |
 | Infrastructure | E2B health check warnings, `E2B_InfrastructureError`, `E2B_SDKError`, `SandboxStartFailed` |
 | Internal coordination | `step_has_active_owner`, `step_ownership_lost`, `execution_not_active` |
@@ -85,6 +85,15 @@ explicit error message for a numeric limit; a merged change may not be deployed.
 - **Fix:** For a Python code node, inspect the saved top-level `script_code` field. Follow [nodes.md](nodes.md) and the public contract before changing the definition. An empty catalog input schema does not mean Python scripts are unsupported.
 - **Retry:** After saving and reading back the corrected version.
 - **Contact Puente:** A managed node or a saved nonempty script still produces this error.
+
+### `ExpressionError`
+
+- **Meaning:** A field formula (`now`, `today`, `format_date`, `uuid`) received a value it cannot use.
+- **Where it appears:** A step error with `code` (usually `invalid_date`), `hint`, `node`, `field`, `function`, `argument_index`, and `received`. Save and activation problems appear instead as `422` or `validation_warnings` items.
+- **Causes:** Data that is not a supported date, such as `06/10/2026` text or a non-epoch number, or an invalid zone, language, or format built from data.
+- **Fix:** Follow [expressions.md](expressions.md): correct the source data or the formula, and preview it with sample data through `POST /workflows/expressions/evaluate`.
+- **Retry:** After the data or formula changes. The same data fails again.
+- **Contact Puente:** The preview returns `ok` for the same value that fails at runtime.
 
 ## Integrations
 
